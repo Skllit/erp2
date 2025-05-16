@@ -215,6 +215,9 @@ export const endpoints = {
     update: (id: string) => `/api/branches/${id}`,
     delete: (id: string) => `/api/branches/${id}`,
     getById: (id: string) => `/api/branches/${id}`,
+    getProducts: (id: string) => `/api/branches/${id}/products`,
+    assignProduct: (id: string) => `/api/branches/${id}/products`,
+    removeProduct: (branchId: string, productId: string) => `/api/branches/${branchId}/products/${productId}`,
   },
   // Orders (Sales)
   orders: {
@@ -589,9 +592,21 @@ export const apiService = {
   getBranches: async () => {
     try {
       const response = await branchService.get(endpoints.branches.list);
-      return response.data;
+      // Ensure we return an array even if the response is wrapped in a data property
+      return Array.isArray(response.data) ? response.data : 
+             (response.data?.data && Array.isArray(response.data.data)) ? response.data.data : [];
     } catch (error) {
       console.error('[Branch Service] Get branches error:', error);
+      return [];
+    }
+  },
+
+  getBranchById: async (id: string) => {
+    try {
+      const response = await branchService.get(endpoints.branches.getById(id));
+      return response.data;
+    } catch (error) {
+      console.error('[Branch Service] Get branch by ID error:', error);
       throw error;
     }
   },
@@ -622,6 +637,36 @@ export const apiService = {
       return response.data;
     } catch (error) {
       console.error('[Branch Service] Delete branch error:', error);
+      throw error;
+    }
+  },
+
+  getBranchProducts: async (branchId: string) => {
+    try {
+      const response = await branchService.get(endpoints.branches.getProducts(branchId));
+      return response.data;
+    } catch (error) {
+      console.error('[Branch Service] Get branch products error:', error);
+      throw error;
+    }
+  },
+
+  assignProductToBranch: async (productId: string, branchId: string) => {
+    try {
+      const response = await branchService.post(endpoints.branches.assignProduct(branchId), { productId });
+      return response.data;
+    } catch (error) {
+      console.error('[Branch Service] Assign product to branch error:', error);
+      throw error;
+    }
+  },
+
+  removeProductFromBranch: async (branchId: string, productId: string) => {
+    try {
+      const response = await branchService.delete(endpoints.branches.removeProduct(branchId, productId));
+      return response.data;
+    } catch (error) {
+      console.error('[Branch Service] Remove product from branch error:', error);
       throw error;
     }
   },

@@ -25,7 +25,7 @@ import {
   InputLabel,
   Collapse,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, Add as AddIcon } from '@mui/icons-material';
 import { useApi } from '../../hooks/useApi';
 import apiService from '../../services/api';
 
@@ -59,6 +59,12 @@ interface Product {
   unit: string;
 }
 
+interface Branch {
+  _id: string;
+  name: string;
+  location: string;
+}
+
 const WarehouseManagement: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
@@ -70,6 +76,10 @@ const WarehouseManagement: React.FC = () => {
   });
   const [managers, setManagers] = useState<User[]>([]);
   const [warehouseProducts, setWarehouseProducts] = useState<Record<string, Product[]>>({});
+  const [openBranchDialog, setOpenBranchDialog] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   const {
     data: warehouses,
@@ -135,6 +145,21 @@ const WarehouseManagement: React.FC = () => {
     }
   };
 
+  const fetchBranches = async () => {
+    try {
+      const response = await apiService.getBranches();
+      if (Array.isArray(response)) {
+        setBranches(response);
+      } else {
+        console.error('Invalid branches response format:', response);
+        setBranches([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch branches:', err);
+      setBranches([]);
+    }
+  };
+
   const handleOpenDialog = (warehouse?: Warehouse) => {
     console.log('Opening dialog with managers:', managers);
     setSelectedWarehouse(warehouse || null);
@@ -195,6 +220,34 @@ const WarehouseManagement: React.FC = () => {
       if (!warehouseProducts[warehouseId]) {
         await fetchWarehouseProducts(warehouseId);
       }
+    }
+  };
+
+  const handleOpenBranchDialog = (product: Product) => {
+    setSelectedProduct(product);
+    setSelectedBranch('');
+    setOpenBranchDialog(true);
+    fetchBranches();
+  };
+
+  const handleCloseBranchDialog = () => {
+    setOpenBranchDialog(false);
+    setSelectedProduct(null);
+    setSelectedBranch('');
+  };
+
+  const handleAssignToBranch = async () => {
+    if (!selectedProduct || !selectedBranch) return;
+
+    try {
+      await apiService.assignProductToBranch(selectedProduct._id, selectedBranch);
+      handleCloseBranchDialog();
+      // Refresh the warehouse products
+      if (expandedWarehouse) {
+        await fetchWarehouseProducts(expandedWarehouse);
+      }
+    } catch (error) {
+      console.error('Error assigning product to branch:', error);
     }
   };
 
@@ -286,6 +339,7 @@ const WarehouseManagement: React.FC = () => {
                                     <TableCell>SKU</TableCell>
                                     <TableCell>Price</TableCell>
                                     <TableCell>Unit</TableCell>
+                                    <TableCell>Actions</TableCell>
                                   </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -295,6 +349,14 @@ const WarehouseManagement: React.FC = () => {
                                       <TableCell>{product.sku}</TableCell>
                                       <TableCell>${product.price.toFixed(2)}</TableCell>
                                       <TableCell>{product.unit}</TableCell>
+                                      <TableCell>
+                                        <IconButton
+                                          color="primary"
+                                          onClick={() => handleOpenBranchDialog(product)}
+                                        >
+                                          <AddIcon />
+                                        </IconButton>
+                                      </TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>
@@ -379,6 +441,45 @@ const WarehouseManagement: React.FC = () => {
             disabled={creating || updating || !formData.name || !formData.location || !formData.managerId}
           >
             {selectedWarehouse ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openBranchDialog} onClose={handleCloseBranchDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Assign Product to Branch</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <FormControl fullWidth required error={!selectedBranch}>
+                <InputLabel>Branch</InputLabel>
+                <Select
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  label="Branch"
+                >
+                  {Array.isArray(branches) && branches.map((branch) => (
+                    <MenuItem key={branch._id} value={branch._id}>
+                      {branch.name} ({branch.location})
+                    </MenuItem>
+                  ))}
+                </Select>
+                {!selectedBranch && (
+                  <Typography color="error" variant="caption">
+                    Branch is required
+                  </Typography>
+                )}
+              </FormControl>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseBranchDialog}>Cancel</Button>
+          <Button 
+            onClick={handleAssignToBranch} 
+            color="primary" 
+            disabled={!selectedBranch}
+          >
+            Assign
           </Button>
         </DialogActions>
       </Dialog>

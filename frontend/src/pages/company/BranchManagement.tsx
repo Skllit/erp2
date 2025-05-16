@@ -23,8 +23,9 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Collapse,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon, Remove as RemoveIcon } from '@mui/icons-material';
 import { useApi } from '../../hooks/useApi';
 import apiService from '../../services/api';
 
@@ -57,6 +58,14 @@ interface User {
   role: string;
 }
 
+interface Product {
+  _id: string;
+  name: string;
+  sku: string;
+  price: number;
+  unit: string;
+}
+
 const BranchManagement: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
@@ -67,6 +76,8 @@ const BranchManagement: React.FC = () => {
     managerId: '',
   });
   const [managers, setManagers] = useState<User[]>([]);
+  const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
+  const [branchProducts, setBranchProducts] = useState<Record<string, Product[]>>({});
 
   const {
     data: branches,
@@ -178,6 +189,40 @@ const BranchManagement: React.FC = () => {
     }
   };
 
+  const fetchBranchProducts = async (branchId: string) => {
+    try {
+      const response = await apiService.getBranchProducts(branchId);
+      setBranchProducts(prev => ({
+        ...prev,
+        [branchId]: response
+      }));
+    } catch (err) {
+      console.error('Failed to fetch branch products:', err);
+      setBranchProducts(prev => ({
+        ...prev,
+        [branchId]: []
+      }));
+    }
+  };
+
+  const handleToggleExpand = async (branchId: string) => {
+    if (expandedBranch === branchId) {
+      setExpandedBranch(null);
+    } else {
+      setExpandedBranch(branchId);
+      await fetchBranchProducts(branchId);
+    }
+  };
+
+  const handleRemoveProduct = async (branchId: string, productId: string) => {
+    try {
+      await apiService.removeProductFromBranch(branchId, productId);
+      await fetchBranchProducts(branchId);
+    } catch (error) {
+      console.error('Error removing product from branch:', error);
+    }
+  };
+
   if (loading || loadingWarehouses) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
@@ -218,34 +263,93 @@ const BranchManagement: React.FC = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {branches?.map((branch) => (
-              <TableRow key={branch._id}>
-                <TableCell>{branch.name}</TableCell>
-                <TableCell>{branch.location}</TableCell>
-                <TableCell>
-                  {warehouses?.find(w => w._id === branch.warehouseId)?.name || branch.warehouseId}
-                </TableCell>
-                <TableCell>
-                  {managers.find(m => m._id === branch.managerId)?.username || 'Not assigned'}
-                </TableCell>
-                <TableCell>{new Date(branch.createdAt).toLocaleDateString()}</TableCell>
-                <TableCell>
-                  <IconButton
-                    color="primary"
-                    onClick={() => handleOpenDialog(branch)}
-                    disabled={creating || updating || deleting}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    color="error"
-                    onClick={() => handleDelete(branch._id)}
-                    disabled={creating || updating || deleting}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
+            {(branches || []).map((branch) => (
+              <React.Fragment key={branch._id}>
+                <TableRow>
+                  <TableCell>{branch.name}</TableCell>
+                  <TableCell>{branch.location}</TableCell>
+                  <TableCell>
+                    {warehouses?.find(w => w._id === branch.warehouseId)?.name || branch.warehouseId}
+                  </TableCell>
+                  <TableCell>
+                    {managers.find(m => m._id === branch.managerId)?.username || 'Not assigned'}
+                  </TableCell>
+                  <TableCell>{new Date(branch.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <IconButton
+                      color="primary"
+                      onClick={() => handleOpenDialog(branch)}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      color="error"
+                      onClick={() => handleDelete(branch._id)}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => handleToggleExpand(branch._id)}
+                    >
+                      {expandedBranch === branch._id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={4} sx={{ p: 0 }}>
+                    <Collapse in={expandedBranch === branch._id}>
+                      <Box sx={{ p: 2, bgcolor: 'background.default' }}>
+                        <Typography variant="h6" gutterBottom>
+                          Products in {branch.name}
+                        </Typography>
+                        {branchProducts[branch._id] ? (
+                          branchProducts[branch._id].length > 0 ? (
+                            <TableContainer component={Paper} variant="outlined">
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Name</TableCell>
+                                    <TableCell>SKU</TableCell>
+                                    <TableCell>Price</TableCell>
+                                    <TableCell>Unit</TableCell>
+                                    <TableCell>Actions</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {branchProducts[branch._id].map((product) => (
+                                    <TableRow key={product._id}>
+                                      <TableCell>{product.name}</TableCell>
+                                      <TableCell>{product.sku}</TableCell>
+                                      <TableCell>${product.price.toFixed(2)}</TableCell>
+                                      <TableCell>{product.unit}</TableCell>
+                                      <TableCell>
+                                        <IconButton
+                                          color="error"
+                                          onClick={() => handleRemoveProduct(branch._id, product._id)}
+                                        >
+                                          <RemoveIcon />
+                                        </IconButton>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
+                          ) : (
+                            <Typography color="text.secondary">
+                              No products assigned to this branch
+                            </Typography>
+                          )
+                        ) : (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                            <CircularProgress size={24} />
+                          </Box>
+                        )}
+                      </Box>
+                    </Collapse>
+                  </TableCell>
+                </TableRow>
+              </React.Fragment>
             ))}
           </TableBody>
         </Table>

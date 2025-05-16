@@ -1,6 +1,11 @@
 // src/controllers/branch.controller.ts
 import { Request, Response } from 'express';
 import Branch from '../models/branch.model';
+import mongoose from 'mongoose';
+import axios from 'axios';
+
+const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:5002';
+const WAREHOUSE_SERVICE_URL = 'http://localhost:5003/api';
 
 export const createBranch = (req: Request, res: Response) => {
   const { name, location, warehouseId, managerId } = req.body;
@@ -53,10 +58,6 @@ export const getBranchesByWarehouseId = (req: Request, res: Response) => {
     });
 };
 
-import axios from 'axios';
-
-const WAREHOUSE_SERVICE_URL = 'http://localhost:5003/api';
-
 export const getBranchWithWarehouseInfo = (req: Request, res: Response) => {
   const { branchId } = req.params;
 
@@ -84,7 +85,6 @@ export const getBranchWithWarehouseInfo = (req: Request, res: Response) => {
       res.status(500).json({ message: 'Server error', error });
     });
 };
-
 
 const STOCK_SERVICE_URL = 'http://localhost:5005/api/stocks';
 
@@ -224,5 +224,155 @@ export const createStockRequest = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to place stock request' });
+  }
+};
+
+// Get products in a branch
+export const getBranchProducts = async (req: Request, res: Response): Promise<void> => {
+  const { branchId } = req.params;
+
+  try {
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      res.status(404).json({ message: 'Branch not found' });
+      return;
+    }
+
+    // Fetch product details from product service
+    const productPromises = branch.products.map(async (productId) => {
+      try {
+        const response = await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+        return response.data;
+      } catch (error) {
+        console.error(`Error fetching product ${productId}:`, error);
+        return null;
+      }
+    });
+
+    const products = (await Promise.all(productPromises)).filter(Boolean);
+    res.status(200).json(products);
+  } catch (err) {
+    console.error('Error in getBranchProducts:', err);
+    res.status(500).json({ message: 'Failed to fetch branch products' });
+  }
+};
+
+// Assign a product to a branch
+export const assignProductToBranch = async (req: Request, res: Response): Promise<void> => {
+  const { branchId } = req.params;
+  const { productId } = req.body;
+
+  if (!productId) {
+    res.status(400).json({ message: 'Product ID is required' });
+    return;
+  }
+
+  try {
+    // Validate branch ID
+    if (!mongoose.Types.ObjectId.isValid(branchId)) {
+      res.status(400).json({ message: 'Invalid branch ID' });
+      return;
+    }
+
+    // Validate product ID
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      res.status(400).json({ message: 'Invalid product ID' });
+      return;
+    }
+
+    // First, verify the product exists
+    try {
+      await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        res.status(404).json({ message: 'Product not found' });
+        return;
+      }
+      throw error;
+    }
+
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      res.status(404).json({ message: 'Branch not found' });
+      return;
+    }
+
+    // Convert productId to ObjectId for comparison
+    const productObjectId = new mongoose.Types.ObjectId(productId);
+
+    // Check if product is already assigned
+    if (branch.products.some(id => id.equals(productObjectId))) {
+      res.status(400).json({ message: 'Product is already assigned to this branch' });
+      return;
+    }
+
+    // Add product to branch
+    branch.products.push(productObjectId);
+    await branch.save();
+
+    // Fetch the assigned product details
+    const productResponse = await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+    
+    res.status(200).json({ 
+      message: 'Product assigned successfully', 
+      branch,
+      product: productResponse.data
+    });
+  } catch (err) {
+    console.error('Error in assignProductToBranch:', err);
+    res.status(500).json({ message: 'Failed to assign product to branch' });
+  }
+};
+
+// Remove a product from a branch
+export const removeProductFromBranch = async (req: Request, res: Response): Promise<void> => {
+  const { branchId, productId } = req.params;
+
+  if (!productId) {
+    res.status(400).json({ message: 'Product ID is required' });
+    return;
+  }
+
+  try {
+    // Validate branch ID
+    if (!mongoose.Types.ObjectId.isValid(branchId)) {
+      res.status(400).json({ message: 'Invalid branch ID' });
+      return;
+    }
+
+    // Validate product ID
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      res.status(400).json({ message: 'Invalid product ID' });
+      return;
+    }
+
+    const branch = await Branch.findById(branchId);
+    if (!branch) {
+      res.status(404).json({ message: 'Branch not found' });
+      return;
+    }
+
+    // Convert productId to ObjectId for comparison
+    const productObjectId = new mongoose.Types.ObjectId(productId);
+
+    // Check if product is assigned to branch
+    if (!branch.products.some(id => id.equals(productObjectId))) {
+      res.status(400).json({ message: 'Product is not assigned to this branch' });
+      return;
+    }
+
+    // Remove product from branch
+    branch.products = branch.products.filter(
+      (id) => !id.equals(productObjectId)
+    );
+    await branch.save();
+
+    res.status(200).json({ 
+      message: 'Product removed successfully', 
+      branch 
+    });
+  } catch (err) {
+    console.error('Error in removeProductFromBranch:', err);
+    res.status(500).json({ message: 'Failed to remove product from branch' });
   }
 };

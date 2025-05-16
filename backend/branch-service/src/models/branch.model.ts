@@ -5,6 +5,7 @@ export interface Branch extends Document {
   location: string;
   warehouseId: mongoose.Types.ObjectId;
   managerId: mongoose.Types.ObjectId;
+  products: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,6 +16,7 @@ const branchSchema: Schema = new Schema(
     location: { type: String, required: true },
     warehouseId: { type: Schema.Types.ObjectId, ref: 'Warehouse', required: true },
     managerId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    products: [{ type: Schema.Types.ObjectId, ref: 'Product' }],
   },
   { timestamps: true }
 );
