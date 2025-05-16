@@ -3,9 +3,11 @@
 import { Request, Response } from 'express';
 import Warehouse from '../models/warehouse.model';
 import axios from 'axios';
+import mongoose from 'mongoose';
 
 const BRANCH_SERVICE_URL =
   process.env.BRANCH_SERVICE_URL || 'http://localhost:5005';
+const PRODUCT_SERVICE_URL = process.env.PRODUCT_SERVICE_URL || 'http://localhost:5002';
 
 export const createWarehouse = async (
   req: Request,
@@ -170,5 +172,167 @@ export const requestReplenish = async (req: Request, res: Response) => {
     res.status(201).json(response.data);
   } catch (err: any) {
     res.status(500).json({ message: 'Failed to send replenish request', error: err.message });
+  }
+};
+
+// Get products in a warehouse
+export const getWarehouseProducts = async (req: Request, res: Response): Promise<void> => {
+  const { warehouseId } = req.params;
+  try {
+    const warehouse = await Warehouse.findById(warehouseId);
+    if (!warehouse) {
+      res.status(404).json({ message: 'Warehouse not found' });
+      return;
+    }
+
+    // Fetch product details from product service
+    const productPromises = warehouse.products.map(async (productId) => {
+      try {
+        const response = await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+        return response.data;
+      } catch (error) {
+        console.error(`Error fetching product ${productId}:`, error);
+        return null;
+      }
+    });
+
+    const products = (await Promise.all(productPromises)).filter(Boolean);
+    res.status(200).json(products);
+  } catch (err) {
+    console.error('Error in getWarehouseProducts:', err);
+    if (err instanceof Error) {
+      res.status(500).json({ message: err.message });
+    } else {
+      res.status(500).json({ message: 'An unknown error occurred' });
+    }
+  }
+};
+
+// Assign a product to a warehouse
+export const assignProductToWarehouse = async (req: Request, res: Response): Promise<void> => {
+  const { warehouseId } = req.params;
+  const { productId } = req.body;
+
+  if (!productId) {
+    res.status(400).json({ message: 'Product ID is required' });
+    return;
+  }
+
+  try {
+    // Validate warehouse ID
+    if (!mongoose.Types.ObjectId.isValid(warehouseId)) {
+      res.status(400).json({ message: 'Invalid warehouse ID' });
+      return;
+    }
+
+    // Validate product ID
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      res.status(400).json({ message: 'Invalid product ID' });
+      return;
+    }
+
+    // First, verify the product exists
+    try {
+      await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        res.status(404).json({ message: 'Product not found' });
+        return;
+      }
+      throw error;
+    }
+
+    const warehouse = await Warehouse.findById(warehouseId);
+    if (!warehouse) {
+      res.status(404).json({ message: 'Warehouse not found' });
+      return;
+    }
+
+    // Convert productId to ObjectId for comparison
+    const productObjectId = new mongoose.Types.ObjectId(productId);
+
+    // Check if product is already assigned
+    if (warehouse.products.some(id => id.equals(productObjectId))) {
+      res.status(400).json({ message: 'Product is already assigned to this warehouse' });
+      return;
+    }
+
+    // Add product to warehouse
+    warehouse.products.push(productObjectId);
+    await warehouse.save();
+
+    // Fetch the assigned product details
+    const productResponse = await axios.get(`${PRODUCT_SERVICE_URL}/api/products/${productId}`);
+    
+    res.status(200).json({ 
+      message: 'Product assigned successfully', 
+      warehouse,
+      product: productResponse.data
+    });
+  } catch (err) {
+    console.error('Error in assignProductToWarehouse:', err);
+    if (err instanceof Error) {
+      res.status(500).json({ message: err.message });
+    } else {
+      res.status(500).json({ message: 'An unknown error occurred' });
+    }
+  }
+};
+
+// Remove a product from a warehouse
+export const removeProductFromWarehouse = async (req: Request, res: Response): Promise<void> => {
+  const { warehouseId } = req.params;
+  const { productId } = req.body;
+
+  if (!productId) {
+    res.status(400).json({ message: 'Product ID is required' });
+    return;
+  }
+
+  try {
+    // Validate warehouse ID
+    if (!mongoose.Types.ObjectId.isValid(warehouseId)) {
+      res.status(400).json({ message: 'Invalid warehouse ID' });
+      return;
+    }
+
+    // Validate product ID
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      res.status(400).json({ message: 'Invalid product ID' });
+      return;
+    }
+
+    const warehouse = await Warehouse.findById(warehouseId);
+    if (!warehouse) {
+      res.status(404).json({ message: 'Warehouse not found' });
+      return;
+    }
+
+    // Convert productId to ObjectId for comparison
+    const productObjectId = new mongoose.Types.ObjectId(productId);
+
+    // Check if product is assigned to warehouse
+    if (!warehouse.products.some(id => id.equals(productObjectId))) {
+      res.status(400).json({ message: 'Product is not assigned to this warehouse' });
+      return;
+    }
+
+    // Remove product from warehouse
+    warehouse.products = warehouse.products.filter(
+      (id) => !id.equals(productObjectId)
+    );
+    await warehouse.save();
+
+    res.status(200).json({ 
+      message: 'Product removed successfully', 
+      warehouse 
+    });
+  } catch (err) {
+    console.error('Error in removeProductFromWarehouse:', err);
+    if (err instanceof Error) {
+      res.status(500).json({ message: err.message });
+    } else {
+      res.status(500).json({ message: 'An unknown error occurred' });
+    }
   }
 };

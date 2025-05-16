@@ -20,8 +20,11 @@ import {
   Alert,
   CircularProgress,
   Grid,
+  Select,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon } from '@mui/icons-material';
 import { useApi } from '../../hooks/useApi';
 import apiService from '../../services/api';
 
@@ -51,6 +54,11 @@ interface ProductFormData {
   tagName: string;
 }
 
+interface Warehouse {
+  _id: string;
+  name: string;
+}
+
 const categories = [
   'Shirts',
   'Pants',
@@ -64,7 +72,9 @@ const units = ['pcs', 'pack', 'set', 'box', 'kg', 'g', 'l', 'ml'];
 
 const ProductManagement: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
+  const [openWarehouseDialog, setOpenWarehouseDialog] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>('');
   const [formData, setFormData] = useState<ProductFormData>({
     name: '',
     description: '',
@@ -83,6 +93,12 @@ const ProductManagement: React.FC = () => {
     error,
     execute: fetchProducts,
   } = useApi<Product[]>();
+
+  const {
+    data: warehouses,
+    loading: loadingWarehouses,
+    execute: fetchWarehouses,
+  } = useApi<Warehouse[]>();
 
   const {
     execute: createProduct,
@@ -104,7 +120,8 @@ const ProductManagement: React.FC = () => {
 
   useEffect(() => {
     fetchProducts(apiService.getProducts);
-  }, [fetchProducts]);
+    fetchWarehouses(apiService.getWarehouses);
+  }, [fetchProducts, fetchWarehouses]);
 
   const handleOpenDialog = (product?: Product) => {
     setSelectedProduct(product || null);
@@ -122,6 +139,12 @@ const ProductManagement: React.FC = () => {
     setOpenDialog(true);
   };
 
+  const handleOpenWarehouseDialog = (product: Product) => {
+    setSelectedProduct(product);
+    setSelectedWarehouse('');
+    setOpenWarehouseDialog(true);
+  };
+
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedProduct(null);
@@ -136,6 +159,12 @@ const ProductManagement: React.FC = () => {
       status: 'active',
       tagName: '',
     });
+  };
+
+  const handleCloseWarehouseDialog = () => {
+    setOpenWarehouseDialog(false);
+    setSelectedProduct(null);
+    setSelectedWarehouse('');
   };
 
   const handleSubmit = async () => {
@@ -165,6 +194,19 @@ const ProductManagement: React.FC = () => {
     }
   };
 
+  const handleAssignWarehouse = async () => {
+    if (!selectedProduct || !selectedWarehouse) return;
+
+    try {
+      // Call API to assign product to warehouse
+      await apiService.assignProductToWarehouse(selectedProduct._id, selectedWarehouse);
+      handleCloseWarehouseDialog();
+      fetchProducts(apiService.getProducts);
+    } catch (error) {
+      console.error('Error assigning product to warehouse:', error);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this product?')) {
       try {
@@ -176,7 +218,7 @@ const ProductManagement: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loading || loadingWarehouses) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
         <CircularProgress />
@@ -197,9 +239,9 @@ const ProductManagement: React.FC = () => {
         </Button>
       </Box>
 
-      {error && (
+      {(error || createError || updateError || deleteError) && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
+          {error || createError || updateError || deleteError}
         </Alert>
       )}
 
@@ -233,6 +275,12 @@ const ProductManagement: React.FC = () => {
                     onClick={() => handleOpenDialog(product)}
                   >
                     <EditIcon />
+                  </IconButton>
+                  <IconButton
+                    color="primary"
+                    onClick={() => handleOpenWarehouseDialog(product)}
+                  >
+                    <AddIcon />
                   </IconButton>
                   <IconButton
                     color="error"
@@ -353,6 +401,45 @@ const ProductManagement: React.FC = () => {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSubmit} color="primary" disabled={creating || updating}>
             {selectedProduct ? 'Update' : 'Create'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openWarehouseDialog} onClose={handleCloseWarehouseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Assign Product to Warehouse</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <FormControl fullWidth required error={!selectedWarehouse}>
+                <InputLabel>Warehouse</InputLabel>
+                <Select
+                  value={selectedWarehouse}
+                  onChange={(e) => setSelectedWarehouse(e.target.value)}
+                  label="Warehouse"
+                >
+                  {warehouses?.map((warehouse) => (
+                    <MenuItem key={warehouse._id} value={warehouse._id}>
+                      {warehouse.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {!selectedWarehouse && (
+                  <Typography color="error" variant="caption">
+                    Warehouse is required
+                  </Typography>
+                )}
+              </FormControl>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseWarehouseDialog}>Cancel</Button>
+          <Button 
+            onClick={handleAssignWarehouse} 
+            color="primary" 
+            disabled={!selectedWarehouse}
+          >
+            Assign
           </Button>
         </DialogActions>
       </Dialog>

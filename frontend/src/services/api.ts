@@ -205,6 +205,8 @@ export const endpoints = {
     update: (id: string) => `/api/warehouses/${id}`,
     delete: (id: string) => `/api/warehouses/${id}`,
     getById: (id: string) => `/api/warehouses/${id}`,
+    products: (id: string) => `/api/warehouses/${id}/products`,
+    assignProduct: (id: string) => `/api/warehouses/${id}/products`,
   },
   // Branches
   branches: {
@@ -663,7 +665,29 @@ export const apiService = {
       console.error('[Warehouse Service] Delete warehouse error:', error);
       throw error;
     }
-  }
+  },
+
+  getWarehouseProducts: async (warehouseId: string) => {
+    try {
+      const response = await warehouseService.get(endpoints.warehouses.products(warehouseId));
+      return response.data;
+    } catch (error) {
+      console.error('[Warehouse Service] Get warehouse products error:', error);
+      throw error;
+    }
+  },
+
+  assignProductToWarehouse: async (productId: string, warehouseId: string) => {
+    try {
+      const response = await warehouseService.post(endpoints.warehouses.assignProduct(warehouseId), {
+        productId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('[Warehouse Service] Assign product to warehouse error:', error);
+      throw error;
+    }
+  },
 };
 
 export default apiService; 

@@ -23,8 +23,9 @@ import {
   Select,
   FormControl,
   InputLabel,
+  Collapse,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon, ExpandLess as ExpandLessIcon } from '@mui/icons-material';
 import { useApi } from '../../hooks/useApi';
 import apiService from '../../services/api';
 
@@ -50,15 +51,25 @@ interface WarehouseFormData {
   managerId: string;
 }
 
+interface Product {
+  _id: string;
+  name: string;
+  sku: string;
+  price: number;
+  unit: string;
+}
+
 const WarehouseManagement: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
+  const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null);
   const [formData, setFormData] = useState<WarehouseFormData>({
     name: '',
     location: '',
     managerId: '',
   });
   const [managers, setManagers] = useState<User[]>([]);
+  const [warehouseProducts, setWarehouseProducts] = useState<Record<string, Product[]>>({});
 
   const {
     data: warehouses,
@@ -105,6 +116,22 @@ const WarehouseManagement: React.FC = () => {
     } catch (err) {
       console.error('Failed to fetch warehouse managers:', err);
       setManagers([]);
+    }
+  };
+
+  const fetchWarehouseProducts = async (warehouseId: string) => {
+    try {
+      const response = await apiService.getWarehouseProducts(warehouseId);
+      setWarehouseProducts(prev => ({
+        ...prev,
+        [warehouseId]: response
+      }));
+    } catch (err) {
+      console.error('Failed to fetch warehouse products:', err);
+      setWarehouseProducts(prev => ({
+        ...prev,
+        [warehouseId]: []
+      }));
     }
   };
 
@@ -160,6 +187,17 @@ const WarehouseManagement: React.FC = () => {
     }
   };
 
+  const handleToggleExpand = async (warehouseId: string) => {
+    if (expandedWarehouse === warehouseId) {
+      setExpandedWarehouse(null);
+    } else {
+      setExpandedWarehouse(warehouseId);
+      if (!warehouseProducts[warehouseId]) {
+        await fetchWarehouseProducts(warehouseId);
+      }
+    }
+  };
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
@@ -200,30 +238,83 @@ const WarehouseManagement: React.FC = () => {
           </TableHead>
           <TableBody>
             {(warehouses || []).map((warehouse) => (
-              <TableRow key={warehouse._id}>
-                <TableCell>{warehouse.name}</TableCell>
-                <TableCell>{warehouse.location}</TableCell>
-                <TableCell>
-                  {managers.find(m => m._id === warehouse.managerId)?.username || 'Not assigned'}
-                </TableCell>
-                <TableCell>{new Date(warehouse.createdAt).toLocaleDateString()}</TableCell>
-                <TableCell>
-                  <IconButton
-                    color="primary"
-                    onClick={() => handleOpenDialog(warehouse)}
-                    disabled={creating || updating || deleting}
-                  >
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton
-                    color="error"
-                    onClick={() => handleDelete(warehouse._id)}
-                    disabled={creating || updating || deleting}
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
+              <React.Fragment key={warehouse._id}>
+                <TableRow>
+                  <TableCell>{warehouse.name}</TableCell>
+                  <TableCell>{warehouse.location}</TableCell>
+                  <TableCell>
+                    {managers.find(m => m._id === warehouse.managerId)?.username || 'Not assigned'}
+                  </TableCell>
+                  <TableCell>{new Date(warehouse.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <IconButton
+                      color="primary"
+                      onClick={() => handleToggleExpand(warehouse._id)}
+                    >
+                      {expandedWarehouse === warehouse._id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    </IconButton>
+                    <IconButton
+                      color="primary"
+                      onClick={() => handleOpenDialog(warehouse)}
+                      disabled={creating || updating || deleting}
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      color="error"
+                      onClick={() => handleDelete(warehouse._id)}
+                      disabled={creating || updating || deleting}
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={5} sx={{ p: 0 }}>
+                    <Collapse in={expandedWarehouse === warehouse._id}>
+                      <Box sx={{ p: 2, bgcolor: 'background.default' }}>
+                        <Typography variant="h6" gutterBottom>
+                          Products in {warehouse.name}
+                        </Typography>
+                        {warehouseProducts[warehouse._id] ? (
+                          warehouseProducts[warehouse._id].length > 0 ? (
+                            <TableContainer component={Paper} variant="outlined">
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Name</TableCell>
+                                    <TableCell>SKU</TableCell>
+                                    <TableCell>Price</TableCell>
+                                    <TableCell>Unit</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {warehouseProducts[warehouse._id].map((product) => (
+                                    <TableRow key={product._id}>
+                                      <TableCell>{product.name}</TableCell>
+                                      <TableCell>{product.sku}</TableCell>
+                                      <TableCell>${product.price.toFixed(2)}</TableCell>
+                                      <TableCell>{product.unit}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
+                          ) : (
+                            <Typography color="text.secondary">
+                              No products assigned to this warehouse
+                            </Typography>
+                          )
+                        ) : (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                            <CircularProgress size={24} />
+                          </Box>
+                        )}
+                      </Box>
+                    </Collapse>
+                  </TableCell>
+                </TableRow>
+              </React.Fragment>
             ))}
           </TableBody>
         </Table>
